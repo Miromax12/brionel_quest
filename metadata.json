@@ -1,0 +1,8 @@
+{
+  "name": "BRIONEL Quest",
+  "description": "A gamified MLM growth platform with AI-powered simulators, content assistants, and interactive quest tracking.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
