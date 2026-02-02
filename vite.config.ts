@@ -8,6 +8,17 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        allowedHosts: [
+          'brionel-quest.onrender.com'
+        ]
+      },
+      preview: {
+        host: '0.0.0.0',
+        port: 4173,
+        strictPort: true,
+        allowedHosts: [
+          'brionel-quest.onrender.com'
+        ]
       },
       plugins: [react()],
       define: {
