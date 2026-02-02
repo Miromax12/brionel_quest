@@ -1,0 +1,256 @@
+
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BRIONEL Quest Standalone</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .quest-gradient { background: linear-gradient(135deg, #059669 0%, #10b981 100%); }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@^19.2.4",
+        "react-dom": "https://esm.sh/react-dom@^19.2.4",
+        "react-dom/client": "https://esm.sh/react-dom@^19.2.4/client",
+        "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
+        "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+        "@google/genai": "https://esm.sh/@google/genai@^1.39.0"
+      }
+    }
+    </script>
+
+    <script type="module">
+        import React, { useState, useEffect, useRef, useMemo } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+        import * as Lucide from 'lucide-react';
+        import { GoogleGenAI, Type } from "@google/genai";
+
+        // --- CONSTANTS & TYPES ---
+        const UserStatus = {
+            STARTER: '🌱 Стартер',
+            ACTIVE: '⚡ Активний',
+            LEADER: '🔥 Лідер потоку',
+            MASTER: '💎 Майстер рекрутингу',
+            LEGEND: '👑 Легенда BRIONEL'
+        };
+
+        const INITIAL_STAGES = [
+            { week: 1, title: "Фундамент бренду", missions: [
+                { id: '1-1', title: 'Оптимізуй шапку профілю', description: 'Зроби чітке УТП та заклик до дії', xpReward: 50, isCompleted: false },
+                { id: '1-2', title: 'Reels про ранок', description: 'Покажи свою енергію та продукти', xpReward: 30, isCompleted: false },
+                { id: '1-3', title: 'AI Тренування', description: 'Пройди 3 діалоги з симулятором', xpReward: 40, isCompleted: false }
+            ]},
+            { week: 2, title: "Перші контакти", missions: [
+                { id: '2-1', title: 'Напиши 5 людям', description: 'Використовуй шаблони AI', xpReward: 60, isCompleted: false }
+            ]},
+            { week: 3, title: "Екосистема соцмереж", missions: [
+                { id: '3-1', title: 'Інста профіль', description: 'Створити та заповнити профіль', xpReward: 100, isCompleted: false },
+                { id: '3-2', title: 'YouTube канал', description: 'Оформити та налаштувати канал', xpReward: 100, isCompleted: false },
+                { id: '3-3', title: 'TikTok', description: 'Створити та оформити', xpReward: 50, isCompleted: false }
+            ]},
+            { week: 4, title: "Контентна стратегія", missions: [
+                { id: '4-1', title: '3 Reels: Історія змін', description: 'Особиста історія трансформації', xpReward: 150, isCompleted: false },
+                { id: '4-2', title: '3 звичайні пости', description: 'Експертний контент', xpReward: 90, isCompleted: false }
+            ]},
+            { week: 5, title: "Telegram Майстерність", missions: [
+                { id: '5-1', title: 'Створити ТГ канал', description: 'Налаштувати та оформити', xpReward: 80, isCompleted: false },
+                { id: '5-2', title: '5 постів у ТГ', description: 'Марафон корисного контенту', xpReward: 120, isCompleted: false }
+            ]},
+            { week: 6, title: "Голос та Візуал", missions: [
+                { id: '6-1', title: '5 подкастів', description: 'Аудіо-користь для каналу', xpReward: 200, isCompleted: false },
+                { id: '6-2', title: '3 Каруселі Instagram', description: 'Навчальний контент', xpReward: 150, isCompleted: false }
+            ]},
+            { week: 7, title: "Експертне розпакування", missions: [
+                { id: '7-1', title: '5 розпакувань', description: 'Огляд продукції компанії', xpReward: 250, isCompleted: false }
+            ]}
+        ];
+
+        const DAILY_CHECKLIST = [
+            { id: 'd1', title: 'Написати 3 новим людям', xp: 30, completed: false },
+            { id: 'd2', title: 'Викласти сторіс', xp: 10, completed: false },
+            { id: 'd3', title: 'Відповісти на коментарі', xp: 10, completed: false },
+            { id: 'd4', title: 'Зробити 1 reels/пост', xp: 25, completed: false }
+        ];
+
+        const CANDIDATES = [
+            { id: 'c1', name: 'Олена', type: 'INTERESTED', difficulty: 'EASY', description: 'Мама в декреті, шукає дохід.' },
+            { id: 'c2', name: 'Михайло', type: 'SKEPTIC', difficulty: 'MEDIUM', description: 'Мав негативний досвід.' }
+        ];
+
+        const STATUS_THRESHOLDS = [
+            { status: UserStatus.STARTER, minXp: 0 },
+            { status: UserStatus.ACTIVE, minXp: 100 },
+            { status: UserStatus.LEADER, minXp: 500 },
+            { status: UserStatus.MASTER, minXp: 1500 },
+            { status: UserStatus.LEGEND, minXp: 5000 }
+        ];
+
+        // --- SERVICES ---
+        const ai = new GoogleGenAI({ apiKey: window.process?.env?.API_KEY || "" });
+
+        const geminiService = {
+            async generateIdeas(topic) {
+                if (!window.process?.env?.API_KEY) return "Помилка: API Key не знайдено.";
+                const response = await ai.models.generateContent({
+                    model: 'gemini-3-flash-preview',
+                    contents: `Сгенеруй 3 ідеї для посту в Instagram для партнера MLM компанії BRIONEL. Тема: ${topic}. Відповідь повинна бути українською мовою.`
+                });
+                return response.text;
+            },
+            async simulate(candidateType, userMessage, history) {
+                const systemInstruction = `Ти - потенційний кандидат у MLM бізнес компанії BRIONEL. Твій типаж: ${candidateType}. Спілкуйся українською. Коротко (1-3 речення).`;
+                const response = await ai.models.generateContent({
+                    model: 'gemini-3-flash-preview',
+                    contents: { parts: [{ text: systemInstruction }, ...history.map(h => ({ text: `${h.role}: ${h.content}` })), { text: `Партнер: ${userMessage}` }] }
+                });
+                return response.text;
+            }
+        };
+
+        // --- COMPONENTS ---
+
+        const Dashboard = ({ user, addXP }) => {
+            const [tasks, setTasks] = useState(DAILY_CHECKLIST);
+            const toggleTask = (id) => {
+                setTasks(prev => prev.map(t => {
+                    if (t.id === id && !t.completed) { addXP(t.xp); return { ...t, completed: true }; }
+                    return t;
+                }));
+            };
+            const completed = tasks.filter(t => t.completed).length;
+            const progress = (completed / tasks.length) * 100;
+
+            return (
+                <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
+                    <h2 className="text-3xl font-black">Вітаємо, {user.name.split(' ')[0]}!</h2>
+                    <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold flex items-center gap-2"><Lucide.Flame className="text-orange-500" /> Lead Flow Game</h3>
+                            <span className="text-sm font-bold text-emerald-600">{Math.round(progress)}%</span>
+                        </div>
+                        <div className="h-3 w-full bg-slate-100 rounded-full mb-6 overflow-hidden">
+                            <div className="h-full quest-gradient transition-all" style={{ width: `${progress}%` }}></div>
+                        </div>
+                        <div className="space-y-3">
+                            {tasks.map(t => (
+                                <div key={t.id} onClick={() => toggleTask(t.id)} className={`flex items-center gap-4 p-4 rounded-2xl border cursor-pointer transition-all ${t.completed ? 'bg-emerald-50 border-emerald-100' : 'bg-white hover:border-emerald-200'}`}>
+                                    {t.completed ? <Lucide.CheckCircle2 className="text-emerald-500" /> : <Lucide.Circle className="text-slate-300" />}
+                                    <span className={`flex-1 font-bold ${t.completed ? 'line-through opacity-50' : ''}`}>{t.title}</span>
+                                    <span className="text-xs font-black">+{t.xp} XP</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const QuestMap = ({ addXP }) => {
+            const [stages, setStages] = useState(INITIAL_STAGES);
+            const toggleMission = (wIdx, mId) => {
+                setStages(prev => {
+                    const next = JSON.parse(JSON.stringify(prev));
+                    const mission = next[wIdx].missions.find(m => m.id === mId);
+                    if (mission && !mission.isCompleted) { mission.isCompleted = true; addXP(mission.xpReward); }
+                    else if (mission) { mission.isCompleted = false; }
+                    return next;
+                });
+            };
+
+            return (
+                <div className="max-w-3xl mx-auto space-y-12 pb-20 animate-fade-in">
+                    <header className="text-center">
+                        <h2 className="text-3xl font-black">Квест-карта успіху</h2>
+                        <p className="text-slate-500">Виконуйте завдання для розблокування нових рівнів</p>
+                    </header>
+                    <div className="space-y-8">
+                        {stages.map((stage, idx) => (
+                            <div key={stage.week} className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
+                                <h3 className="text-xl font-black mb-4 flex items-center gap-2">
+                                    <span className="w-8 h-8 quest-gradient rounded-lg flex items-center justify-center text-white text-xs">{stage.week}</span>
+                                    {stage.title}
+                                </h3>
+                                <div className="space-y-3">
+                                    {stage.missions.map(m => (
+                                        <div key={m.id} onClick={() => toggleMission(idx, m.id)} className={`flex items-start gap-3 p-3 rounded-2xl border cursor-pointer ${m.isCompleted ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
+                                            <div className="mt-1">{m.isCompleted ? <Lucide.CheckCircle2 size={18} className="text-emerald-500" /> : <Lucide.Circle size={18} className="text-slate-300" />}</div>
+                                            <div className="flex-1">
+                                                <p className={`text-sm font-bold ${m.isCompleted ? 'line-through opacity-50' : ''}`}>{m.title}</p>
+                                                <p className="text-xs text-slate-500">{m.description}</p>
+                                            </div>
+                                            <span className="text-[10px] font-black bg-white px-2 py-1 rounded-lg">+{m.xpReward} XP</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const SidebarItem = ({ to, icon, label, currentPath }) => {
+            const isActive = currentPath === to;
+            return (
+                <Link to={to} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isActive ? 'bg-emerald-50 text-emerald-600 font-bold' : 'text-slate-500 hover:bg-slate-50'}`}>
+                    {icon} <span className="text-sm">{label}</span>
+                </Link>
+            );
+        };
+
+        const App = () => {
+            const [user, setUser] = useState({ name: 'Анна Шевченко', xp: 120, status: UserStatus.ACTIVE, avatar: 'https://picsum.photos/100' });
+            const location = useLocation();
+
+            useEffect(() => {
+                const currentStatus = [...STATUS_THRESHOLDS].reverse().find(t => user.xp >= t.minXp);
+                if (currentStatus && currentStatus.status !== user.status) {
+                    setUser(prev => ({ ...prev, status: currentStatus.status }));
+                }
+            }, [user.xp]);
+
+            const addXP = (v) => setUser(prev => ({ ...prev, xp: prev.xp + v }));
+
+            return (
+                <div className="flex min-h-screen">
+                    <aside className="w-64 bg-white border-r flex flex-col p-6 hidden lg:flex">
+                        <h1 className="text-xl font-black text-emerald-900 mb-8 flex items-center gap-2">
+                           <div className="w-8 h-8 quest-gradient rounded flex items-center justify-center text-white">B</div> BRIONEL
+                        </h1>
+                        <nav className="flex-1 space-y-1">
+                            <SidebarItem to="/" icon={<Lucide.LayoutDashboard size={20}/>} label="Головна" currentPath={location.pathname}/>
+                            <SidebarItem to="/quest" icon={<Lucide.MapIcon size={20}/>} label="Квест-карта" currentPath={location.pathname}/>
+                        </nav>
+                        <div className="mt-auto pt-6 border-t text-center">
+                            <p className="font-bold text-sm">{user.name}</p>
+                            <p className="text-[10px] text-emerald-600 font-black">{user.status}</p>
+                            <p className="text-[10px] font-bold text-slate-400 mt-2">XP: {user.xp}</p>
+                        </div>
+                    </aside>
+                    <main className="flex-1 p-8 overflow-y-auto h-screen">
+                        <Routes>
+                            <Route path="/" element={<Dashboard user={user} addXP={addXP} />} />
+                            <Route path="/quest" element={<QuestMap addXP={addXP} />} />
+                        </Routes>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<HashRouter><App /></HashRouter>);
+    </script>
+</body>
+</html>
